@@ -475,11 +475,95 @@
     .sidebar{width:100%;min-width:0;height:46%;border-right:none;border-bottom:1px solid var(--line);}
     .map-wrap{height:54%;}
   }
+
+  /* ---------- Auth screen ---------- */
+  .app.hidden{display:none;}
+  .auth-screen{
+    position:fixed;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--cream);
+    z-index:3000;
+  }
+  .auth-screen.hidden{display:none;}
+  .auth-card{
+    width:380px;max-width:90vw;
+    background:#fff;
+    border-radius:18px;
+    padding:30px 30px 26px 30px;
+    box-shadow:0 20px 60px rgba(54,34,25,0.18);
+    border:1px solid var(--line);
+  }
+  .auth-card .brand{justify-content:center;margin-bottom:14px;}
+  .auth-card h2{
+    font-family:'Fraunces',serif;
+    font-size:19px;text-align:center;
+    margin:0 0 4px 0;
+  }
+  .auth-card .auth-sub{
+    font-size:12.5px;color:var(--espresso-soft);opacity:0.75;
+    text-align:center;margin:0 0 20px 0;line-height:1.4;
+  }
+  .auth-tabs{
+    display:flex;gap:6px;
+    background:var(--cream-2);
+    border-radius:10px;padding:4px;
+    margin-bottom:18px;
+  }
+  .auth-tab{
+    flex:1;text-align:center;
+    padding:7px 0;border-radius:8px;
+    font-size:12.5px;font-weight:600;
+    color:var(--espresso-soft);
+    cursor:pointer;border:none;background:none;
+  }
+  .auth-tab.active{background:#fff;color:var(--espresso);box-shadow:var(--shadow);}
+  .auth-error{
+    font-size:12.5px;color:var(--danger);
+    background:#fbe4de;border-radius:8px;
+    padding:8px 12px;margin-bottom:12px;
+    display:none;line-height:1.4;
+  }
+  .auth-notice{
+    font-size:12.5px;color:var(--espresso-soft);
+    background:var(--cream-2);border-radius:8px;
+    padding:8px 12px;margin-bottom:12px;
+    display:none;line-height:1.4;
+  }
+  .auth-card .btn-primary{margin-bottom:0;margin-top:4px;}
+  .auth-card .btn-primary:disabled{opacity:0.6;}
 </style>
 </head>
 <body>
 
-<div class="app">
+<div class="auth-screen" id="authScreen">
+  <div class="auth-card">
+    <div class="brand">
+      <div class="brand-mark">☕</div>
+      <h1>CoffeeLA</h1>
+    </div>
+    <h2 id="authTitle">Log in to your journal</h2>
+    <p class="auth-sub">This map is private. Log in to see and add your visits.</p>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" id="tabLogin">Log In</button>
+      <button type="button" class="auth-tab" id="tabSignup">Create Account</button>
+    </div>
+    <div class="auth-error" id="authError"></div>
+    <div class="auth-notice" id="authNotice"></div>
+    <form id="authForm">
+      <div class="field">
+        <label for="authEmail">Email</label>
+        <input type="text" id="authEmail" required placeholder="you@example.com" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="authPassword">Password</label>
+        <input type="password" id="authPassword" required placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn-primary" id="authSubmitBtn">Log In</button>
+    </form>
+  </div>
+</div>
+
+<div class="app hidden" id="appRoot">
   <div class="sidebar">
     <div class="sidebar-header">
       <div class="brand">
@@ -499,6 +583,7 @@
       <button class="link-btn" id="exportBtn">Export backup</button>
       <label class="link-btn" for="importFile">Import backup</label>
       <input type="file" id="importFile" accept="application/json" hidden />
+      <button class="link-btn" id="logoutBtn">Log out</button>
       <span class="sync-status" id="syncStatus"><span class="sync-dot" id="syncDot"></span>Connecting…</span>
     </div>
   </div>
@@ -1155,7 +1240,106 @@ async function init(){
   }
 }
 
-init();
+// ---------- Auth ----------
+const authScreen = document.getElementById('authScreen');
+const appRoot = document.getElementById('appRoot');
+const authForm = document.getElementById('authForm');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authSubmitBtn = document.getElementById('authSubmitBtn');
+const authError = document.getElementById('authError');
+const authNotice = document.getElementById('authNotice');
+const authTitle = document.getElementById('authTitle');
+const tabLogin = document.getElementById('tabLogin');
+const tabSignup = document.getElementById('tabSignup');
+const logoutBtn = document.getElementById('logoutBtn');
+
+let authMode = 'login';
+
+function setAuthMode(mode){
+  authMode = mode;
+  tabLogin.classList.toggle('active', mode === 'login');
+  tabSignup.classList.toggle('active', mode === 'signup');
+  authTitle.textContent = mode === 'login' ? 'Log in to your journal' : 'Create your account';
+  authSubmitBtn.textContent = mode === 'login' ? 'Log In' : 'Create Account';
+  authPassword.setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
+  hideAuthMessages();
+}
+tabLogin.addEventListener('click', () => setAuthMode('login'));
+tabSignup.addEventListener('click', () => setAuthMode('signup'));
+
+function hideAuthMessages(){
+  authError.style.display = 'none';
+  authNotice.style.display = 'none';
+}
+function showAuthError(msg){
+  authError.textContent = msg;
+  authError.style.display = 'block';
+  authNotice.style.display = 'none';
+}
+function showAuthNotice(msg){
+  authNotice.textContent = msg;
+  authNotice.style.display = 'block';
+  authError.style.display = 'none';
+}
+
+function showApp(){
+  authScreen.classList.add('hidden');
+  appRoot.classList.remove('hidden');
+}
+function showAuthScreen(){
+  appRoot.classList.add('hidden');
+  authScreen.classList.remove('hidden');
+  authForm.reset();
+  hideAuthMessages();
+}
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  if(!email || !password) return;
+
+  hideAuthMessages();
+  authSubmitBtn.disabled = true;
+  authSubmitBtn.textContent = authMode === 'login' ? 'Logging in…' : 'Creating account…';
+
+  try{
+    if(authMode === 'login'){
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if(error) throw error;
+      // onAuthStateChange handles showing the app once the session lands.
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if(error) throw error;
+      if(data.session){
+        // Project has autoconfirm on; we're in.
+      } else {
+        setAuthMode('login');
+        authEmail.value = email;
+        showAuthNotice('Account created. If you are not logged in automatically, ask Claude to confirm your email in Supabase, then log in above.');
+      }
+    }
+  }catch(err){
+    showAuthError(err.message || 'Something went wrong.');
+  }finally{
+    authSubmitBtn.disabled = false;
+    authSubmitBtn.textContent = authMode === 'login' ? 'Log In' : 'Create Account';
+  }
+});
+
+logoutBtn.addEventListener('click', async () => {
+  await sb.auth.signOut();
+});
+
+sb.auth.onAuthStateChange((event, session) => {
+  if(session){
+    showApp();
+    init();
+  } else if(event === 'SIGNED_OUT' || event === 'INITIAL_SESSION'){
+    showAuthScreen();
+  }
+});
 </script>
 </body>
 </html>
