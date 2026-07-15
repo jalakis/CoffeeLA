@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cof Cof — My Independent Coffee Shop Journal</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzNDAgNTYwIj48ZWxsaXBzZSBjeD0iMTYwIiBjeT0iNzAiIHJ4PSIxMDUiIHJ5PSI0MiIgZmlsbD0iI2M4NjUxZiIvPjxwYXRoIGQ9Ik02MCwxMjQgQzQyLDE2MCA0NiwyMTAgNzAsMjQ0IEM5MiwyNzMgMTIyLDI4NiAxNTAsMjkzIEMxNTQsMzIwIDE1OCw0MjAgMTYwLDU0MCBDMTYyLDQyMCAxNjYsMzIwIDE3MCwyOTMgQzE5OCwyODYgMjI4LDI3MyAyNTAsMjQ0IEMyNzQsMjEwIDI3OCwxNjAgMjYwLDEyNCBBMTAwLDM4IDAgMCAwIDYwLDEyNCBaIiBmaWxsPSIjYzg2NTFmIi8+PHBhdGggZD0iTTI1OCwxNTAgQzMwMCwxNDUgMzE1LDE3MCAzMTIsMTk1IEMzMDksMjIwIDI4OCwyMzUgMjU4LDIyNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYzg2NTFmIiBzdHJva2Utd2lkdGg9IjIwIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4=">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Kenia&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -304,17 +305,9 @@
   }
   .placing-banner.hidden{display:none;}
 
-  .coffee-pin{
-    width:34px;height:34px;
-    border-radius:50% 50% 50% 0;
-    background:linear-gradient(135deg,var(--coffee-2),var(--espresso-soft));
-    transform:rotate(45deg);
-    display:flex;align-items:center;justify-content:center;
-    box-shadow:0 3px 8px rgba(54,34,25,0.35);
-    border:2px solid #fff;
+  .coffee-pin-icon{
+    filter:drop-shadow(0 3px 4px rgba(54,34,25,0.4));
   }
-  .coffee-pin span{transform:rotate(-45deg);font-size:15px;}
-  .coffee-pin.temp{background:linear-gradient(135deg,var(--accent),#b5501a);}
 
   /* ---------- Popup ---------- */
   .leaflet-popup-content-wrapper{
@@ -737,13 +730,20 @@ function starString(rating){
   return s;
 }
 
+const PIN_ICON_SVG = '<svg class="coffee-pin-icon" width="34" height="56" viewBox="0 0 340 560" xmlns="http://www.w3.org/2000/svg">' +
+  '<ellipse cx="160" cy="70" rx="105" ry="42" fill="{{FILL}}"/>' +
+  '<path d="M60,124 C42,160 46,210 70,244 C92,273 122,286 150,293 C154,320 158,420 160,540 C162,420 166,320 170,293 C198,286 228,273 250,244 C274,210 278,160 260,124 A100,38 0 0 0 60,124 Z" fill="{{FILL}}"/>' +
+  '<path d="M258,150 C300,145 315,170 312,195 C309,220 288,235 258,225" fill="none" stroke="{{FILL}}" stroke-width="20" stroke-linecap="round"/>' +
+  '</svg>';
+
 function makeIcon(temp){
+  const fill = temp ? '#d9822b' : '#c8651f';
   return L.divIcon({
     className: '',
-    html: '<div class="coffee-pin' + (temp ? ' temp' : '') + '"><span>☕</span></div>',
-    iconSize: [34, 34],
-    iconAnchor: [17, 32],
-    popupAnchor: [0, -30]
+    html: PIN_ICON_SVG.split('{{FILL}}').join(fill),
+    iconSize: [34, 56],
+    iconAnchor: [17, 54],
+    popupAnchor: [0, -50]
   });
 }
 
