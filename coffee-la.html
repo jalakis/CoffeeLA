@@ -82,6 +82,7 @@
   }
   .btn-primary:hover{background:var(--coffee);}
   .btn-primary.placing{background:var(--accent);color:#fff;}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
 
   .search-box{
     position:relative;
@@ -167,8 +168,15 @@
   }
   .empty-state p{
     font-size:12.5px;color:var(--espresso-soft);opacity:0.8;
-    line-height:1.5;margin:0;
+    line-height:1.5;margin:0 0 12px 0;
   }
+  .empty-state button{
+    padding:8px 14px;border-radius:8px;border:1px solid var(--line);
+    background:#fff;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--espresso-soft);
+  }
+  .empty-state button:hover{background:var(--cream-2);}
+  .empty-state.error{border-color:#e3b6a8;}
+  .empty-state.error .emoji{filter:none;}
 
   .shop-card{
     display:flex;
@@ -247,6 +255,7 @@
     padding:12px 22px;
     border-top:1px solid var(--line);
     display:flex;
+    align-items:center;
     gap:14px;
     font-size:12px;
   }
@@ -259,6 +268,14 @@
     font-family:'Inter',sans-serif;
   }
   .link-btn:hover{color:var(--coffee);}
+  .sync-dot{
+    width:7px;height:7px;border-radius:50%;
+    background:#3d9a56;
+    display:inline-block;
+    margin-right:5px;
+  }
+  .sync-dot.offline{background:var(--danger);}
+  .sync-status{font-size:11px;color:var(--espresso-soft);opacity:0.7;margin-left:auto;display:flex;align-items:center;}
 
   /* ---------- Map ---------- */
   .map-wrap{flex:1;position:relative;}
@@ -451,6 +468,7 @@
     font-size:13px;font-weight:600;cursor:pointer;
   }
   .btn-save:hover{background:var(--coffee);}
+  .btn-save:disabled{opacity:0.6;cursor:not-allowed;}
 
   @media (max-width: 860px){
     .app{flex-direction:column;}
@@ -468,19 +486,20 @@
         <div class="brand-mark">☕</div>
         <h1>CoffeeLA</h1>
       </div>
-      <p class="subtitle">Your personal log of independent LA coffee shops — add each one after you visit.</p>
+      <p class="subtitle">Your personal log of independent LA coffee shops — synced to the cloud, add each one after you visit.</p>
       <button class="btn-primary" id="addShopBtn">+ Add a Shop You Visited</button>
       <div class="search-box">
         <input type="text" id="searchInput" placeholder="Search your shops…" />
       </div>
     </div>
     <div class="filters hidden" id="filters"></div>
-    <div class="list-count" id="listCount">0 shops</div>
+    <div class="list-count" id="listCount">Loading…</div>
     <div class="shop-list" id="shopList"></div>
     <div class="sidebar-footer">
       <button class="link-btn" id="exportBtn">Export backup</button>
       <label class="link-btn" for="importFile">Import backup</label>
       <input type="file" id="importFile" accept="application/json" hidden />
+      <span class="sync-status" id="syncStatus"><span class="sync-dot" id="syncDot"></span>Connecting…</span>
     </div>
   </div>
   <div class="map-wrap">
@@ -535,23 +554,87 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
-const STORAGE_KEY = 'coffeeLA_shops';
+// ---------- Supabase setup ----------
+// This is a personal, single-user journal with no login screen, so the
+// anon key below is meant to be public (it's protected by the row-level
+// security policies on the coffee_shops table, not by hiding this key).
+const SUPABASE_URL = "https://wvjprpanvzmczjntxwvf.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind2anBycGFudnptY3pqbnR4d3ZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMzc5NTgsImV4cCI6MjA5OTcxMzk1OH0.-2607ikDg6yTjdkD4Mlq82l4rT5Kwh7glN04q-U4iJU";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const PHOTOS_BUCKET = "shop-photos";
 
-function loadShops(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  }catch(e){
-    console.error('Could not read saved shops', e);
-    return [];
-  }
+function toDbRow(shop){
+  return {
+    name: shop.name,
+    neighborhood: shop.neighborhood || null,
+    lat: shop.lat,
+    lng: shop.lng,
+    rating: shop.rating || null,
+    review: shop.review || null,
+    date_visited: shop.dateVisited || null,
+    photo_url: shop.photo || null
+  };
 }
-function saveShops(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(shops));
+function fromDbRow(row){
+  return {
+    id: row.id,
+    name: row.name,
+    neighborhood: row.neighborhood || '',
+    lat: row.lat,
+    lng: row.lng,
+    rating: row.rating || 0,
+    review: row.review || '',
+    dateVisited: row.date_visited || '',
+    photo: row.photo_url || null
+  };
 }
 
-let shops = loadShops();
+async function fetchShops(){
+  const { data, error } = await sb
+    .from('coffee_shops')
+    .select('*')
+    .order('date_visited', { ascending: false, nullsFirst: false });
+  if(error) throw error;
+  return data.map(fromDbRow);
+}
+async function insertShopRemote(shop){
+  const { data, error } = await sb.from('coffee_shops').insert(toDbRow(shop)).select().single();
+  if(error) throw error;
+  return fromDbRow(data);
+}
+async function updateShopRemote(id, shop){
+  const { data, error } = await sb.from('coffee_shops').update(toDbRow(shop)).eq('id', id).select().single();
+  if(error) throw error;
+  return fromDbRow(data);
+}
+async function deleteShopRemote(id){
+  const { error } = await sb.from('coffee_shops').delete().eq('id', id);
+  if(error) throw error;
+}
+
+function storagePathFromUrl(url){
+  if(!url) return null;
+  const marker = `/object/public/${PHOTOS_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if(idx === -1) return null;
+  return url.slice(idx + marker.length);
+}
+async function uploadPhoto(blob){
+  const fileName = (crypto.randomUUID ? crypto.randomUUID() : ('p' + Date.now() + Math.random().toString(36).slice(2))) + '.jpg';
+  const { error } = await sb.storage.from(PHOTOS_BUCKET).upload(fileName, blob, { contentType: 'image/jpeg', upsert: false });
+  if(error) throw error;
+  const { data } = sb.storage.from(PHOTOS_BUCKET).getPublicUrl(fileName);
+  return data.publicUrl;
+}
+async function deletePhotoBestEffort(url){
+  const path = storagePathFromUrl(url);
+  if(!path) return;
+  try{ await sb.storage.from(PHOTOS_BUCKET).remove([path]); }catch(e){ /* best effort, ignore */ }
+}
+
+let shops = [];
 
 // ---------- Map setup ----------
 const mapEl = document.getElementById('map');
@@ -567,7 +650,7 @@ function starString(rating){
   const half = rating - full >= 0.5;
   let s = "★".repeat(full);
   if(half) s += "½";
-  s += "☆".repeat(5 - Math.ceil(rating));
+  s += "☆".repeat(Math.max(0, 5 - Math.ceil(rating)));
   return s;
 }
 
@@ -582,7 +665,7 @@ function makeIcon(temp){
 }
 
 function mapsLink(shop){
-  const q = shop.address ? (shop.name + ", " + shop.address) : (shop.lat + "," + shop.lng);
+  const q = shop.name + (shop.neighborhood ? (", " + shop.neighborhood) : "") + ", Los Angeles, CA";
   return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
 }
 
@@ -591,6 +674,12 @@ function formatDate(iso){
   const d = new Date(iso + "T00:00:00");
   if(isNaN(d)) return iso;
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function escapeHTML(str){
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
 }
 
 function photoOrPlaceholder(shop, className){
@@ -620,12 +709,6 @@ function popupHTML(shop){
   `;
 }
 
-function escapeHTML(str){
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
-}
-
 const markers = {};
 
 function addMarkerForShop(shop){
@@ -633,8 +716,6 @@ function addMarkerForShop(shop){
   marker.bindPopup(popupHTML(shop), { maxWidth: 300, minWidth: 290 });
   markers[shop.id] = marker;
 }
-
-shops.forEach(addMarkerForShop);
 
 // ---------- Sidebar: filters ----------
 const filtersEl = document.getElementById('filters');
@@ -676,6 +757,31 @@ function matches(shop){
   const hay = [shop.name, shop.neighborhood, shop.review].filter(Boolean).join(' ').toLowerCase();
   const passesSearch = !searchTerm || hay.includes(searchTerm);
   return passesFilter && passesSearch;
+}
+
+function renderLoading(){
+  listEl.innerHTML = `
+    <div class="empty-state">
+      <div class="emoji">☕</div>
+      <h3>Loading your shops…</h3>
+      <p>Fetching your journal from the cloud.</p>
+    </div>
+  `;
+  countEl.textContent = 'Loading…';
+}
+
+function renderError(err){
+  listEl.innerHTML = `
+    <div class="empty-state error">
+      <div class="emoji">⚠️</div>
+      <h3>Couldn't reach the database</h3>
+      <p>${escapeHTML(err.message || 'Unknown error')}</p>
+      <button id="retryBtn">Try again</button>
+    </div>
+  `;
+  countEl.textContent = '—';
+  const retryBtn = document.getElementById('retryBtn');
+  if(retryBtn) retryBtn.addEventListener('click', init);
 }
 
 function render(){
@@ -747,6 +853,9 @@ let placingPin = false;
 let pendingLatLng = null;
 let tempMarker = null;
 let editingId = null;
+let pendingPhotoBlob = null;
+let currentPhotoExistingUrl = null;
+let photoRemoved = false;
 
 const addShopBtn = document.getElementById('addShopBtn');
 const placingBanner = document.getElementById('placingBanner');
@@ -765,9 +874,9 @@ const photoPreview = document.getElementById('photoPreview');
 const photoRemove = document.getElementById('photoRemove');
 const cancelBtn = document.getElementById('cancelBtn');
 const cancelPlacing = document.getElementById('cancelPlacing');
+const saveBtn = document.getElementById('saveBtn');
 
 let currentRating = 5;
-let currentPhotoDataUrl = null;
 
 function buildStarPicker(){
   starPicker.innerHTML = '';
@@ -795,7 +904,7 @@ function todayISO(){
   return d.toISOString().slice(0, 10);
 }
 
-function resizeImage(file, maxWidth = 900, quality = 0.75){
+function resizeImageToBlob(file, maxWidth = 900, quality = 0.75){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -808,7 +917,9 @@ function resizeImage(file, maxWidth = 900, quality = 0.75){
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        canvas.toBlob((blob) => {
+          resolve({ blob, previewUrl: canvas.toDataURL('image/jpeg', quality) });
+        }, 'image/jpeg', quality);
       };
       img.onerror = reject;
       img.src = e.target.result;
@@ -822,13 +933,16 @@ photoBtn.addEventListener('click', () => fPhoto.click());
 fPhoto.addEventListener('change', async () => {
   const file = fPhoto.files[0];
   if(!file) return;
-  currentPhotoDataUrl = await resizeImage(file);
-  photoPreview.style.backgroundImage = `url('${currentPhotoDataUrl}')`;
+  const { blob, previewUrl } = await resizeImageToBlob(file);
+  pendingPhotoBlob = blob;
+  photoRemoved = false;
+  photoPreview.style.backgroundImage = `url('${previewUrl}')`;
   photoPreview.style.display = 'block';
   photoRemove.style.display = 'inline';
 });
 photoRemove.addEventListener('click', () => {
-  currentPhotoDataUrl = null;
+  pendingPhotoBlob = null;
+  photoRemoved = true;
   fPhoto.value = '';
   photoPreview.style.display = 'none';
   photoRemove.style.display = 'none';
@@ -877,12 +991,15 @@ function openModal(mode, shop){
   fName.value = shop ? shop.name : '';
   fNeighborhood.value = shop ? (shop.neighborhood || '') : '';
   fDate.value = shop ? (shop.dateVisited || todayISO()) : todayISO();
-  fReview.value = shop ? (shop.review || '') : '';
-  currentRating = shop ? shop.rating : 5;
+  currentRating = shop ? (shop.rating || 5) : 5;
   updateStarPicker();
-  currentPhotoDataUrl = shop ? (shop.photo || null) : null;
-  if(currentPhotoDataUrl){
-    photoPreview.style.backgroundImage = `url('${currentPhotoDataUrl}')`;
+  fReview.value = shop ? (shop.review || '') : '';
+
+  pendingPhotoBlob = null;
+  photoRemoved = false;
+  currentPhotoExistingUrl = shop ? (shop.photo || null) : null;
+  if(currentPhotoExistingUrl){
+    photoPreview.style.backgroundImage = `url('${currentPhotoExistingUrl}')`;
     photoPreview.style.display = 'block';
     photoRemove.style.display = 'inline';
   }else{
@@ -907,40 +1024,57 @@ function closeModal(discardTemp){
 
 cancelBtn.addEventListener('click', () => closeModal(true));
 
-shopForm.addEventListener('submit', (e) => {
+shopForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = fName.value.trim();
   if(!name) return;
 
-  if(editingId){
-    const shop = shops.find(s => s.id === editingId);
-    shop.name = name;
-    shop.neighborhood = fNeighborhood.value.trim();
-    shop.dateVisited = fDate.value;
-    shop.rating = currentRating;
-    shop.review = fReview.value.trim();
-    shop.photo = currentPhotoDataUrl;
-    markers[shop.id].setPopupContent(popupHTML(shop));
-  } else {
-    const shop = {
-      id: 'shop_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+
+  try{
+    let photoUrl = currentPhotoExistingUrl;
+
+    if(pendingPhotoBlob){
+      const newUrl = await uploadPhoto(pendingPhotoBlob);
+      if(currentPhotoExistingUrl) await deletePhotoBestEffort(currentPhotoExistingUrl);
+      photoUrl = newUrl;
+    } else if(photoRemoved){
+      if(currentPhotoExistingUrl) await deletePhotoBestEffort(currentPhotoExistingUrl);
+      photoUrl = null;
+    }
+
+    const draft = {
       name,
       neighborhood: fNeighborhood.value.trim(),
       dateVisited: fDate.value,
       rating: currentRating,
       review: fReview.value.trim(),
-      photo: currentPhotoDataUrl,
-      lat: pendingLatLng.lat,
-      lng: pendingLatLng.lng
+      photo: photoUrl
     };
-    shops.push(shop);
-    if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
-    addMarkerForShop(shop);
-  }
 
-  saveShops();
-  closeModal(false);
-  render();
+    if(editingId){
+      const updated = await updateShopRemote(editingId, draft);
+      const idx = shops.findIndex(s => s.id === editingId);
+      if(idx !== -1) shops[idx] = updated;
+      if(markers[updated.id]) markers[updated.id].setPopupContent(popupHTML(updated));
+    } else {
+      draft.lat = pendingLatLng.lat;
+      draft.lng = pendingLatLng.lng;
+      const created = await insertShopRemote(draft);
+      shops.push(created);
+      if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
+      addMarkerForShop(created);
+    }
+
+    closeModal(false);
+    render();
+  }catch(err){
+    alert('Could not save this shop:\n' + (err.message || err));
+  }finally{
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Shop';
+  }
 });
 
 window.editShop = function(id){
@@ -950,14 +1084,19 @@ window.editShop = function(id){
   openModal('edit', shop);
 };
 
-window.deleteShop = function(id){
+window.deleteShop = async function(id){
   const shop = shops.find(s => s.id === id);
   if(!shop) return;
   if(!confirm(`Delete "${shop.name}" from your journal? This can't be undone.`)) return;
-  if(markers[id]){ map.removeLayer(markers[id]); delete markers[id]; }
-  shops = shops.filter(s => s.id !== id);
-  saveShops();
-  render();
+  try{
+    await deleteShopRemote(id);
+    if(shop.photo) await deletePhotoBestEffort(shop.photo);
+    if(markers[id]){ map.removeLayer(markers[id]); delete markers[id]; }
+    shops = shops.filter(s => s.id !== id);
+    render();
+  }catch(err){
+    alert('Could not delete this shop:\n' + (err.message || err));
+  }
 };
 
 // ---------- Export / Import ----------
@@ -965,41 +1104,58 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(shops, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const stamp = todayISO();
   a.href = url;
-  a.download = `coffeela-backup-${stamp}.json`;
+  a.download = `coffeela-backup-${todayISO()}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
 });
 
-document.getElementById('importFile').addEventListener('change', (e) => {
+document.getElementById('importFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    try{
-      const imported = JSON.parse(evt.target.result);
-      if(!Array.isArray(imported)) throw new Error('Not a valid backup file');
-      const withNewIds = imported.map(s => ({
-        ...s,
-        id: 'shop_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
-      }));
-      shops = shops.concat(withNewIds);
-      saveShops();
-      withNewIds.forEach(addMarkerForShop);
-      render();
-      alert(`Imported ${withNewIds.length} shop(s).`);
-    }catch(err){
-      alert('Could not read that file: ' + err.message);
+  try{
+    const text = await file.text();
+    const imported = JSON.parse(text);
+    if(!Array.isArray(imported)) throw new Error('Not a valid backup file');
+
+    let count = 0;
+    for(const record of imported){
+      if(!record.name || typeof record.lat !== 'number' || typeof record.lng !== 'number') continue;
+      const created = await insertShopRemote(record);
+      shops.push(created);
+      addMarkerForShop(created);
+      count++;
     }
-    e.target.value = '';
-  };
-  reader.readAsText(file);
+    render();
+    alert(`Imported ${count} shop(s).`);
+  }catch(err){
+    alert('Could not read that file:\n' + (err.message || err));
+  }
+  e.target.value = '';
 });
 
-render();
+// ---------- Init ----------
+const syncStatus = document.getElementById('syncStatus');
+const syncDot = document.getElementById('syncDot');
+
+async function init(){
+  renderLoading();
+  syncStatus.innerHTML = '<span class="sync-dot" id="syncDot"></span>Connecting…';
+  try{
+    shops = await fetchShops();
+    Object.keys(markers).forEach(id => { map.removeLayer(markers[id]); delete markers[id]; });
+    shops.forEach(addMarkerForShop);
+    document.getElementById('syncStatus').innerHTML = '<span class="sync-dot"></span>Synced';
+    render();
+  }catch(err){
+    document.getElementById('syncStatus').innerHTML = '<span class="sync-dot offline"></span>Offline';
+    renderError(err);
+  }
+}
+
+init();
 </script>
 </body>
 </html>
