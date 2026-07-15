@@ -1286,6 +1286,13 @@ function showAuthNotice(msg){
 function showApp(){
   authScreen.classList.add('hidden');
   appRoot.classList.remove('hidden');
+  // The map was initialized while its container was display:none (behind the
+  // login screen), so Leaflet cached a 0x0 size and renders broken tiles.
+  // Nudge it to recalculate now that the container is actually visible.
+  requestAnimationFrame(() => {
+    map.invalidateSize();
+    setTimeout(() => map.invalidateSize(), 150);
+  });
 }
 function showAuthScreen(){
   appRoot.classList.add('hidden');
