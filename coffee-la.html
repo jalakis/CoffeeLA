@@ -328,6 +328,35 @@
     display:flex;align-items:center;justify-content:center;
     font-size:36px;
   }
+  .popup-gallery-wrap{position:relative;}
+  .popup-gallery{
+    width:100%;height:150px;
+    display:flex;overflow-x:auto;scroll-snap-type:x mandatory;
+    background-color:var(--cream-2);
+    scrollbar-width:none;
+  }
+  .popup-gallery::-webkit-scrollbar{display:none;}
+  .popup-gallery-slide{
+    flex:0 0 100%;scroll-snap-align:start;
+    width:100%;height:150px;
+    background-size:cover;background-position:center;
+  }
+  .popup-gallery-arrow{
+    position:absolute;top:60px;
+    width:26px;height:26px;border-radius:50%;
+    background:rgba(255,255,255,0.9);border:none;
+    display:flex;align-items:center;justify-content:center;
+    font-size:15px;cursor:pointer;color:var(--espresso);
+    box-shadow:0 1px 4px rgba(0,0,0,0.25);
+  }
+  .popup-gallery-arrow.left{left:8px;}
+  .popup-gallery-arrow.right{right:8px;}
+  .popup-gallery-dots{
+    display:flex;justify-content:center;gap:5px;
+    padding:8px 0 0 0;
+  }
+  .popup-dot{width:6px;height:6px;border-radius:50%;background:var(--line);}
+  .popup-dot.active{background:var(--espresso);}
   .popup-body{padding:16px 18px 18px 18px;font-family:'Outfit',sans-serif;}
   .popup-name{
     font-family:'Kenia',cursive;
@@ -424,7 +453,6 @@
   }
   .star-picker .star.filled{color:var(--accent);}
 
-  .photo-input-row{display:flex;align-items:center;gap:12px;}
   .photo-btn{
     padding:9px 14px;
     border-radius:9px;
@@ -435,17 +463,29 @@
     cursor:pointer;
   }
   .photo-btn:hover{background:var(--cream-2);}
-  .photo-preview{
+  .photo-strip{
+    display:flex;flex-wrap:wrap;gap:10px;
+    margin-bottom:10px;
+  }
+  .photo-thumb-wrap{position:relative;width:56px;height:56px;}
+  .photo-thumb{
     width:56px;height:56px;border-radius:9px;
     background-size:cover;background-position:center;
-    display:none;
     box-shadow:inset 0 0 0 1px rgba(0,0,0,0.08);
   }
-  .photo-remove{
-    font-size:11.5px;color:var(--danger);
-    background:none;border:none;cursor:pointer;
-    text-decoration:underline;display:none;
+  .photo-star, .photo-x{
+    position:absolute;
+    width:18px;height:18px;border-radius:50%;
+    border:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    font-size:11px;line-height:1;
+    background:rgba(255,255,255,0.95);color:var(--espresso-soft);
   }
+  .photo-star{top:-5px;left:-5px;}
+  .photo-star.active{background:var(--accent);color:#fff;}
+  .photo-x{top:-5px;right:-5px;}
+  .photo-x:hover{background:#fbe4de;color:var(--danger);}
+  .photo-hint{font-size:11px;color:var(--espresso-soft);opacity:0.65;margin:6px 0 0 0;}
 
   .modal-actions{
     display:flex;justify-content:flex-end;gap:10px;
@@ -616,13 +656,11 @@
         <textarea id="fReview" placeholder="What did you order? What was the vibe? Would you go back?"></textarea>
       </div>
       <div class="field">
-        <label>Photo (optional)</label>
-        <div class="photo-input-row">
-          <button type="button" class="photo-btn" id="photoBtn">Choose photo</button>
-          <input type="file" id="fPhoto" accept="image/*" hidden />
-          <div class="photo-preview" id="photoPreview"></div>
-          <button type="button" class="photo-remove" id="photoRemove">Remove</button>
-        </div>
+        <label>Photos (optional)</label>
+        <div class="photo-strip" id="photoStrip"></div>
+        <button type="button" class="photo-btn" id="photoBtn">+ Add Photos</button>
+        <input type="file" id="fPhoto" accept="image/*" multiple hidden />
+        <p class="photo-hint">Click ★ on a photo to make it your highlight — that's the one shown in the list and used as the main photo.</p>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary" id="cancelBtn">Cancel</button>
@@ -652,11 +690,17 @@ function toDbRow(shop){
     lng: shop.lng,
     rating: shop.rating || null,
     review: shop.review || null,
-    date_visited: shop.dateVisited || null,
-    photo_url: shop.photo || null
+    date_visited: shop.dateVisited || null
   };
 }
 function fromDbRow(row){
+  const photos = (row.shop_photos || [])
+    .slice()
+    .sort((a, b) => {
+      if(a.is_main !== b.is_main) return a.is_main ? -1 : 1;
+      return (a.position || 0) - (b.position || 0);
+    })
+    .map(p => ({ id: p.id, url: p.photo_url, isMain: !!p.is_main }));
   return {
     id: row.id,
     name: row.name,
@@ -666,14 +710,19 @@ function fromDbRow(row){
     rating: row.rating || 0,
     review: row.review || '',
     dateVisited: row.date_visited || '',
-    photo: row.photo_url || null
+    photos: photos
   };
+}
+function mainPhotoUrl(shop){
+  if(!shop.photos || !shop.photos.length) return null;
+  const main = shop.photos.find(p => p.isMain);
+  return (main || shop.photos[0]).url;
 }
 
 async function fetchShops(){
   const { data, error } = await sb
     .from('coffee_shops')
-    .select('*')
+    .select('*, shop_photos(*)')
     .order('date_visited', { ascending: false, nullsFirst: false });
   if(error) throw error;
   return data.map(fromDbRow);
@@ -681,15 +730,33 @@ async function fetchShops(){
 async function insertShopRemote(shop){
   const { data, error } = await sb.from('coffee_shops').insert(toDbRow(shop)).select().single();
   if(error) throw error;
-  return fromDbRow(data);
+  return data;
 }
 async function updateShopRemote(id, shop){
-  const { data, error } = await sb.from('coffee_shops').update(toDbRow(shop)).eq('id', id).select().single();
+  const { error } = await sb.from('coffee_shops').update(toDbRow(shop)).eq('id', id);
   if(error) throw error;
-  return fromDbRow(data);
 }
 async function deleteShopRemote(id){
   const { error } = await sb.from('coffee_shops').delete().eq('id', id);
+  if(error) throw error;
+}
+
+async function insertShopPhoto(shopId, url, isMain, position){
+  const { error } = await sb.from('shop_photos').insert({ shop_id: shopId, photo_url: url, is_main: isMain, position });
+  if(error) throw error;
+}
+async function updateShopPhotoMeta(photoId, isMain, position){
+  const { error } = await sb.from('shop_photos').update({ is_main: isMain, position }).eq('id', photoId);
+  if(error) throw error;
+}
+async function deleteShopPhotoRow(photoId){
+  const { error } = await sb.from('shop_photos').delete().eq('id', photoId);
+  if(error) throw error;
+}
+async function clearMainFlag(shopId){
+  // The database only allows one is_main=true row per shop, so this must
+  // run (and finish) before any new row is set as the main photo.
+  const { error } = await sb.from('shop_photos').update({ is_main: false }).eq('shop_id', shopId).eq('is_main', true);
   if(error) throw error;
 }
 
@@ -765,15 +832,45 @@ function escapeHTML(str){
 }
 
 function photoOrPlaceholder(shop, className){
-  if(shop.photo){
-    return `<div class="${className}" style="background-image:url('${shop.photo}')"></div>`;
+  const url = mainPhotoUrl(shop);
+  if(url){
+    return `<div class="${className}" style="background-image:url('${url}')"></div>`;
   }
   return `<div class="${className}">☕</div>`;
 }
 
+function popupGalleryHTML(shop){
+  const photos = shop.photos || [];
+  if(!photos.length){
+    return `<div class="popup-photo">☕</div>`;
+  }
+  const slides = photos.map(p => `<div class="popup-gallery-slide" style="background-image:url('${p.url}')"></div>`).join('');
+  const multi = photos.length > 1;
+  const dots = multi
+    ? `<div class="popup-gallery-dots">${photos.map((_, i) => `<span class="popup-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
+    : '';
+  const arrows = multi
+    ? `<button type="button" class="popup-gallery-arrow left" onclick="scrollGallery('${shop.id}', -1)">‹</button>
+       <button type="button" class="popup-gallery-arrow right" onclick="scrollGallery('${shop.id}', 1)">›</button>`
+    : '';
+  return `
+    <div class="popup-gallery-wrap">
+      <div class="popup-gallery" data-shop="${shop.id}">${slides}</div>
+      ${arrows}
+      ${dots}
+    </div>
+  `;
+}
+
+window.scrollGallery = function(shopId, dir){
+  document.querySelectorAll(`.popup-gallery[data-shop="${shopId}"]`).forEach(g => {
+    g.scrollBy({ left: g.clientWidth * dir, behavior: 'smooth' });
+  });
+};
+
 function popupHTML(shop){
   return `
-    ${photoOrPlaceholder(shop, 'popup-photo')}
+    ${popupGalleryHTML(shop)}
     <div class="popup-body">
       <h3 class="popup-name">${escapeHTML(shop.name)}</h3>
       <div class="popup-meta">
@@ -928,6 +1025,15 @@ map.on('popupopen', (e) => {
     selectedId = id;
     render();
   }
+  const popupNode = e.popup.getElement();
+  const gallery = popupNode && popupNode.querySelector('.popup-gallery');
+  if(gallery){
+    const dots = popupNode.querySelectorAll('.popup-dot');
+    gallery.addEventListener('scroll', () => {
+      const idx = Math.round(gallery.scrollLeft / gallery.clientWidth);
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    });
+  }
 });
 
 // ---------- Add / Edit flow ----------
@@ -935,9 +1041,12 @@ let placingPin = false;
 let pendingLatLng = null;
 let tempMarker = null;
 let editingId = null;
-let pendingPhotoBlob = null;
-let currentPhotoExistingUrl = null;
-let photoRemoved = false;
+
+// Multi-photo state for the Add/Edit modal.
+let existingPhotos = [];   // [{id, url, isMain}] already saved in the DB (edit mode)
+let removedPhotos = [];    // [{id, url}] existing photos marked for removal this session
+let pendingNewPhotos = []; // [{blob, previewUrl, tempId}] newly chosen files, not yet uploaded
+let mainPhotoKey = null;   // 'existing:<id>' or 'pending:<tempId>' — which photo is the highlight
 
 const addShopBtn = document.getElementById('addShopBtn');
 const placingBanner = document.getElementById('placingBanner');
@@ -952,8 +1061,7 @@ const fReview = document.getElementById('fReview');
 const starPicker = document.getElementById('starPicker');
 const photoBtn = document.getElementById('photoBtn');
 const fPhoto = document.getElementById('fPhoto');
-const photoPreview = document.getElementById('photoPreview');
-const photoRemove = document.getElementById('photoRemove');
+const photoStripEl = document.getElementById('photoStrip');
 const cancelBtn = document.getElementById('cancelBtn');
 const cancelPlacing = document.getElementById('cancelPlacing');
 const saveBtn = document.getElementById('saveBtn');
@@ -1011,23 +1119,59 @@ function resizeImageToBlob(file, maxWidth = 900, quality = 0.75){
   });
 }
 
+function combinedPhotoList(){
+  const ex = existingPhotos.map(p => ({ key: 'existing:' + p.id, url: p.url, kind: 'existing', ref: p }));
+  const pend = pendingNewPhotos.map(p => ({ key: 'pending:' + p.tempId, url: p.previewUrl, kind: 'pending', ref: p }));
+  return ex.concat(pend);
+}
+
+function renderPhotoStrip(){
+  const list = combinedPhotoList();
+
+  if(!list.length){
+    mainPhotoKey = null;
+  } else if(!list.some(item => item.key === mainPhotoKey)){
+    mainPhotoKey = list[0].key;
+  }
+
+  photoStripEl.innerHTML = '';
+  list.forEach(item => {
+    const wrap = document.createElement('div');
+    wrap.className = 'photo-thumb-wrap';
+    const isMain = item.key === mainPhotoKey;
+    wrap.innerHTML = `
+      <div class="photo-thumb" style="background-image:url('${item.url}')"></div>
+      <button type="button" class="photo-star${isMain ? ' active' : ''}" title="${isMain ? 'Highlight photo' : 'Set as highlight'}">★</button>
+      <button type="button" class="photo-x" title="Remove">×</button>
+    `;
+    wrap.querySelector('.photo-star').addEventListener('click', () => {
+      mainPhotoKey = item.key;
+      renderPhotoStrip();
+    });
+    wrap.querySelector('.photo-x').addEventListener('click', () => {
+      if(item.kind === 'existing'){
+        removedPhotos.push({ id: item.ref.id, url: item.ref.url });
+        existingPhotos = existingPhotos.filter(p => p.id !== item.ref.id);
+      } else {
+        pendingNewPhotos = pendingNewPhotos.filter(p => p.tempId !== item.ref.tempId);
+      }
+      if(mainPhotoKey === item.key) mainPhotoKey = null;
+      renderPhotoStrip();
+    });
+    photoStripEl.appendChild(wrap);
+  });
+}
+
 photoBtn.addEventListener('click', () => fPhoto.click());
 fPhoto.addEventListener('change', async () => {
-  const file = fPhoto.files[0];
-  if(!file) return;
-  const { blob, previewUrl } = await resizeImageToBlob(file);
-  pendingPhotoBlob = blob;
-  photoRemoved = false;
-  photoPreview.style.backgroundImage = `url('${previewUrl}')`;
-  photoPreview.style.display = 'block';
-  photoRemove.style.display = 'inline';
-});
-photoRemove.addEventListener('click', () => {
-  pendingPhotoBlob = null;
-  photoRemoved = true;
+  const files = Array.from(fPhoto.files || []);
+  if(!files.length) return;
+  for(const file of files){
+    const { blob, previewUrl } = await resizeImageToBlob(file);
+    pendingNewPhotos.push({ blob, previewUrl, tempId: 'p' + Date.now() + Math.random().toString(36).slice(2) });
+  }
   fPhoto.value = '';
-  photoPreview.style.display = 'none';
-  photoRemove.style.display = 'none';
+  renderPhotoStrip();
 });
 
 function startPlacingPin(){
@@ -1077,17 +1221,12 @@ function openModal(mode, shop){
   updateStarPicker();
   fReview.value = shop ? (shop.review || '') : '';
 
-  pendingPhotoBlob = null;
-  photoRemoved = false;
-  currentPhotoExistingUrl = shop ? (shop.photo || null) : null;
-  if(currentPhotoExistingUrl){
-    photoPreview.style.backgroundImage = `url('${currentPhotoExistingUrl}')`;
-    photoPreview.style.display = 'block';
-    photoRemove.style.display = 'inline';
-  }else{
-    photoPreview.style.display = 'none';
-    photoRemove.style.display = 'none';
-  }
+  existingPhotos = shop && shop.photos ? shop.photos.map(p => ({ ...p })) : [];
+  removedPhotos = [];
+  pendingNewPhotos = [];
+  const currentMain = existingPhotos.find(p => p.isMain);
+  mainPhotoKey = currentMain ? 'existing:' + currentMain.id : (existingPhotos[0] ? 'existing:' + existingPhotos[0].id : null);
+  renderPhotoStrip();
   fPhoto.value = '';
 
   modalOverlay.classList.remove('hidden');
@@ -1115,42 +1254,49 @@ shopForm.addEventListener('submit', async (e) => {
   saveBtn.textContent = 'Saving…';
 
   try{
-    let photoUrl = currentPhotoExistingUrl;
-
-    if(pendingPhotoBlob){
-      const newUrl = await uploadPhoto(pendingPhotoBlob);
-      if(currentPhotoExistingUrl) await deletePhotoBestEffort(currentPhotoExistingUrl);
-      photoUrl = newUrl;
-    } else if(photoRemoved){
-      if(currentPhotoExistingUrl) await deletePhotoBestEffort(currentPhotoExistingUrl);
-      photoUrl = null;
-    }
-
     const draft = {
       name,
       neighborhood: fNeighborhood.value.trim(),
       dateVisited: fDate.value,
       rating: currentRating,
-      review: fReview.value.trim(),
-      photo: photoUrl
+      review: fReview.value.trim()
     };
 
+    let shopId = editingId;
     if(editingId){
-      const updated = await updateShopRemote(editingId, draft);
-      const idx = shops.findIndex(s => s.id === editingId);
-      if(idx !== -1) shops[idx] = updated;
-      if(markers[updated.id]) markers[updated.id].setPopupContent(popupHTML(updated));
+      await updateShopRemote(editingId, draft);
     } else {
       draft.lat = pendingLatLng.lat;
       draft.lng = pendingLatLng.lng;
       const created = await insertShopRemote(draft);
-      shops.push(created);
-      if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
-      addMarkerForShop(created);
+      shopId = created.id;
     }
 
+    // Remove photos the user deleted during this edit.
+    for(const p of removedPhotos){
+      await deleteShopPhotoRow(p.id);
+      await deletePhotoBestEffort(p.url);
+    }
+
+    // Clear the old highlight flag first — the database only allows one
+    // is_main=true row per shop, so this must land before any new highlight
+    // is set (avoids a unique-constraint conflict).
+    await clearMainFlag(shopId);
+
+    let position = 0;
+    for(const p of existingPhotos){
+      await updateShopPhotoMeta(p.id, ('existing:' + p.id) === mainPhotoKey, position);
+      position++;
+    }
+    for(const p of pendingNewPhotos){
+      const url = await uploadPhoto(p.blob);
+      await insertShopPhoto(shopId, url, ('pending:' + p.tempId) === mainPhotoKey, position);
+      position++;
+    }
+
+    if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
     closeModal(false);
-    render();
+    await refreshShops();
   }catch(err){
     alert('Could not save this shop:\n' + (err.message || err));
   }finally{
@@ -1172,7 +1318,9 @@ window.deleteShop = async function(id){
   if(!confirm(`Delete "${shop.name}" from your journal? This can't be undone.`)) return;
   try{
     await deleteShopRemote(id);
-    if(shop.photo) await deletePhotoBestEffort(shop.photo);
+    for(const p of (shop.photos || [])){
+      await deletePhotoBestEffort(p.url);
+    }
     if(markers[id]){ map.removeLayer(markers[id]); delete markers[id]; }
     shops = shops.filter(s => s.id !== id);
     render();
@@ -1206,11 +1354,20 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
     for(const record of imported){
       if(!record.name || typeof record.lat !== 'number' || typeof record.lng !== 'number') continue;
       const created = await insertShopRemote(record);
-      shops.push(created);
-      addMarkerForShop(created);
+      // Backups may be the old single-photo format (record.photo) or the
+      // newer multi-photo format (record.photos: [{url, isMain}, ...]).
+      const photosToImport = Array.isArray(record.photos) && record.photos.length
+        ? record.photos
+        : (record.photo ? [{ url: record.photo, isMain: true }] : []);
+      let pos = 0;
+      for(const p of photosToImport){
+        if(!p.url) continue;
+        await insertShopPhoto(created.id, p.url, !!p.isMain, pos);
+        pos++;
+      }
       count++;
     }
-    render();
+    await refreshShops();
     alert(`Imported ${count} shop(s).`);
   }catch(err){
     alert('Could not read that file:\n' + (err.message || err));
@@ -1222,15 +1379,19 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
 const syncStatus = document.getElementById('syncStatus');
 const syncDot = document.getElementById('syncDot');
 
+async function refreshShops(){
+  shops = await fetchShops();
+  Object.keys(markers).forEach(id => { map.removeLayer(markers[id]); delete markers[id]; });
+  shops.forEach(addMarkerForShop);
+  render();
+}
+
 async function init(){
   renderLoading();
   syncStatus.innerHTML = '<span class="sync-dot" id="syncDot"></span>Connecting…';
   try{
-    shops = await fetchShops();
-    Object.keys(markers).forEach(id => { map.removeLayer(markers[id]); delete markers[id]; });
-    shops.forEach(addMarkerForShop);
+    await refreshShops();
     document.getElementById('syncStatus').innerHTML = '<span class="sync-dot"></span>Synced';
-    render();
   }catch(err){
     document.getElementById('syncStatus').innerHTML = '<span class="sync-dot offline"></span>Offline';
     renderError(err);
