@@ -20,6 +20,8 @@
     --line: #e6d9c3;
     --danger: #591c0e;
     --border-accent: #9cb774;
+    --visited-pin: #489626;
+    --want-pin: #000000;
     --shadow: 0 8px 24px rgba(54,34,25,0.14);
   }
   *{box-sizing:border-box;}
@@ -235,6 +237,15 @@
     border:1px solid var(--border-accent);
   }
   .visit-date{font-size:11px;opacity:0.7;}
+  .want-tag{
+    font-size:10.5px;
+    font-weight:600;
+    padding:2px 7px;
+    border-radius:5px;
+    background:var(--want-pin);
+    color:#fff;
+    border:1px solid var(--want-pin);
+  }
 
   .card-actions{
     position:absolute;
@@ -310,6 +321,10 @@
 
   .coffee-pin-icon{
     display:block;
+    width:34px;height:34px;
+    -webkit-mask-size:contain;mask-size:contain;
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+    -webkit-mask-position:center;mask-position:center;
   }
 
   /* ---------- Popup ---------- */
@@ -443,6 +458,28 @@
   }
   .field input:focus, .field textarea:focus{border-color:var(--coffee-2);}
   .field textarea{resize:vertical;min-height:76px;line-height:1.4;}
+
+  .status-toggle{display:flex;gap:8px;}
+  .status-option{
+    flex:1;
+    text-align:center;
+    padding:9px 10px;
+    border-radius:9px;
+    border:1px solid var(--line);
+    background:#fff;
+    font-size:13px;font-weight:600;
+    color:var(--espresso-soft);
+    cursor:pointer;
+    transition:all .12s ease;
+  }
+  .status-option:hover{border-color:var(--coffee-2);}
+  .status-option.active[data-status="visited"]{
+    background:var(--visited-pin);border-color:var(--visited-pin);color:#fff;
+  }
+  .status-option.active[data-status="want"]{
+    background:var(--want-pin);border-color:var(--want-pin);color:#fff;
+  }
+  .field.hidden{display:none;}
 
   .star-picker{display:flex;gap:6px;}
   .star-picker .star{
@@ -605,11 +642,12 @@
         <h1>Cof Cof</h1>
       </div>
       <p class="subtitle">Your personal log of independent LA coffee shops — synced to the cloud, add each one after you visit.</p>
-      <button class="btn-primary" id="addShopBtn">+ Add a Shop You Visited</button>
+      <button class="btn-primary" id="addShopBtn">+ Add a Shop</button>
       <div class="search-box">
         <input type="text" id="searchInput" placeholder="Search your shops…" />
       </div>
     </div>
+    <div class="filters" id="statusFilters"></div>
     <div class="filters hidden" id="filters"></div>
     <div class="list-count" id="listCount">Loading…</div>
     <div class="shop-list" id="shopList"></div>
@@ -636,6 +674,13 @@
     <p class="modal-sub" id="modalSub">Fill in a few details about your visit.</p>
     <form id="shopForm">
       <div class="field">
+        <label>Status</label>
+        <div class="status-toggle" id="statusToggle">
+          <div class="status-option" data-status="visited">I've been here</div>
+          <div class="status-option" data-status="want">Want to visit</div>
+        </div>
+      </div>
+      <div class="field">
         <label for="fName">Shop name</label>
         <input type="text" id="fName" required placeholder="e.g. Canyon Coffee" />
       </div>
@@ -643,16 +688,16 @@
         <label for="fNeighborhood">Neighborhood / area</label>
         <input type="text" id="fNeighborhood" placeholder="e.g. Echo Park" />
       </div>
-      <div class="field">
+      <div class="field" id="fieldDate">
         <label for="fDate">Date visited</label>
         <input type="date" id="fDate" />
       </div>
-      <div class="field">
+      <div class="field" id="fieldRating">
         <label>Your rating</label>
         <div class="star-picker" id="starPicker"></div>
       </div>
       <div class="field">
-        <label for="fReview">Your review</label>
+        <label for="fReview" id="labelReview">Your review</label>
         <textarea id="fReview" placeholder="What did you order? What was the vibe? Would you go back?"></textarea>
       </div>
       <div class="field">
@@ -690,7 +735,8 @@ function toDbRow(shop){
     lng: shop.lng,
     rating: shop.rating || null,
     review: shop.review || null,
-    date_visited: shop.dateVisited || null
+    date_visited: shop.dateVisited || null,
+    visited: shop.visited !== false
   };
 }
 function fromDbRow(row){
@@ -710,6 +756,7 @@ function fromDbRow(row){
     rating: row.rating || 0,
     review: row.review || '',
     dateVisited: row.date_visited || '',
+    visited: row.visited !== false,
     photos: photos
   };
 }
@@ -802,11 +849,12 @@ function starString(rating){
 
 const PIN_ICON_DATA_URL = 'data:image/png;base64,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';
 
-function makeIcon(temp){
-  const style = temp ? 'filter:hue-rotate(20deg) saturate(1.6) brightness(1.12);' : '';
+function makeIcon(temp, visited){
+  const color = temp ? 'var(--accent)' : (visited === false ? 'var(--want-pin)' : 'var(--visited-pin)');
+  const maskStyle = "-webkit-mask-image:url('" + PIN_ICON_DATA_URL + "');mask-image:url('" + PIN_ICON_DATA_URL + "');background-color:" + color + ";";
   return L.divIcon({
     className: '',
-    html: '<img class="coffee-pin-icon" src="' + PIN_ICON_DATA_URL + '" width="34" height="34" style="' + style + '" />',
+    html: '<div class="coffee-pin-icon" style="' + maskStyle + '"></div>',
     iconSize: [34, 34],
     iconAnchor: [17, 33],
     popupAnchor: [0, -31]
@@ -874,9 +922,9 @@ function popupHTML(shop){
     <div class="popup-body">
       <h3 class="popup-name">${escapeHTML(shop.name)}</h3>
       <div class="popup-meta">
-        <span class="stars">${starString(shop.rating)}</span>
+        ${shop.visited === false ? `<span class="want-tag">☕ Want to visit</span>` : `<span class="stars">${starString(shop.rating)}</span>`}
         ${shop.neighborhood ? `<span class="neighborhood-tag">${escapeHTML(shop.neighborhood)}</span>` : ''}
-        ${shop.dateVisited ? `<span class="visit-date">Visited ${formatDate(shop.dateVisited)}</span>` : ''}
+        ${shop.visited !== false && shop.dateVisited ? `<span class="visit-date">Visited ${formatDate(shop.dateVisited)}</span>` : ''}
       </div>
       ${shop.review ? `<p class="popup-blurb">${escapeHTML(shop.review)}</p>` : ''}
       <div class="popup-actions">
@@ -891,15 +939,41 @@ function popupHTML(shop){
 const markers = {};
 
 function addMarkerForShop(shop){
-  const marker = L.marker([shop.lat, shop.lng], { icon: makeIcon(false) }).addTo(map);
+  const marker = L.marker([shop.lat, shop.lng], { icon: makeIcon(false, shop.visited) }).addTo(map);
   marker.bindPopup(popupHTML(shop), { maxWidth: 300, minWidth: 290 });
   markers[shop.id] = marker;
 }
 
 // ---------- Sidebar: filters ----------
 const filtersEl = document.getElementById('filters');
+const statusFiltersEl = document.getElementById('statusFilters');
 let activeFilter = "All";
+let statusFilter = "All";
 let searchTerm = "";
+
+function renderStatusFilters(){
+  statusFiltersEl.innerHTML = '';
+  const hasWant = shops.some(s => s.visited === false);
+  if(!hasWant){
+    statusFiltersEl.classList.add('hidden');
+    return;
+  }
+  statusFiltersEl.classList.remove('hidden');
+  [
+    { key: 'All', label: 'All' },
+    { key: 'visited', label: "I've Been Here" },
+    { key: 'want', label: 'Want to Visit' }
+  ].forEach(opt => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (opt.key === statusFilter ? ' active' : '');
+    chip.textContent = opt.label;
+    chip.addEventListener('click', () => {
+      statusFilter = opt.key;
+      render();
+    });
+    statusFiltersEl.appendChild(chip);
+  });
+}
 
 function renderFilters(){
   const tags = Array.from(new Set(shops.map(s => (s.neighborhood || '').trim()).filter(Boolean))).sort();
@@ -933,9 +1007,10 @@ let selectedId = null;
 
 function matches(shop){
   const passesFilter = activeFilter === "All" || (shop.neighborhood || '') === activeFilter;
+  const passesStatus = statusFilter === "All" || (statusFilter === 'want' ? shop.visited === false : shop.visited !== false);
   const hay = [shop.name, shop.neighborhood, shop.review].filter(Boolean).join(' ').toLowerCase();
   const passesSearch = !searchTerm || hay.includes(searchTerm);
-  return passesFilter && passesSearch;
+  return passesFilter && passesStatus && passesSearch;
 }
 
 function renderLoading(){
@@ -964,6 +1039,7 @@ function renderError(err){
 }
 
 function render(){
+  renderStatusFilters();
   renderFilters();
   listEl.innerHTML = '';
   let visibleCount = 0;
@@ -973,7 +1049,7 @@ function render(){
       <div class="empty-state">
         <div class="emoji">🗺️</div>
         <h3>No shops yet</h3>
-        <p>Your map is blank on purpose. Click "+ Add a Shop You Visited" and drop a pin the next time you grab a coffee somewhere new.</p>
+        <p>Your map is blank on purpose. Click "+ Add a Shop" and drop a pin the next time you grab a coffee somewhere new — or add one you're hoping to try.</p>
       </div>
     `;
     countEl.textContent = '0 shops';
@@ -995,9 +1071,9 @@ function render(){
       <div class="shop-card-body">
         <p class="shop-card-name">${escapeHTML(shop.name)}</p>
         <div class="shop-card-meta">
-          <span class="stars">${starString(shop.rating)}</span>
+          ${shop.visited === false ? `<span class="want-tag">☕ Want to visit</span>` : `<span class="stars">${starString(shop.rating)}</span>`}
           ${shop.neighborhood ? `<span class="neighborhood-tag">${escapeHTML(shop.neighborhood)}</span>` : ''}
-          ${shop.dateVisited ? `<span class="visit-date">${formatDate(shop.dateVisited)}</span>` : ''}
+          ${shop.visited !== false && shop.dateVisited ? `<span class="visit-date">${formatDate(shop.dateVisited)}</span>` : ''}
         </div>
         ${shop.review ? `<p class="shop-card-blurb">${escapeHTML(shop.review)}</p>` : ''}
       </div>
@@ -1058,7 +1134,11 @@ const fName = document.getElementById('fName');
 const fNeighborhood = document.getElementById('fNeighborhood');
 const fDate = document.getElementById('fDate');
 const fReview = document.getElementById('fReview');
+const labelReview = document.getElementById('labelReview');
 const starPicker = document.getElementById('starPicker');
+const statusToggleEl = document.getElementById('statusToggle');
+const fieldDate = document.getElementById('fieldDate');
+const fieldRating = document.getElementById('fieldRating');
 const photoBtn = document.getElementById('photoBtn');
 const fPhoto = document.getElementById('fPhoto');
 const photoStripEl = document.getElementById('photoStrip');
@@ -1088,6 +1168,28 @@ function updateStarPicker(){
   });
 }
 buildStarPicker();
+
+// ---------- Visited / want-to-visit status toggle ----------
+let currentVisited = true;
+
+function updateVisitedUI(){
+  Array.from(statusToggleEl.children).forEach(opt => {
+    opt.classList.toggle('active', (opt.dataset.status === 'visited') === currentVisited);
+  });
+  fieldDate.classList.toggle('hidden', !currentVisited);
+  fieldRating.classList.toggle('hidden', !currentVisited);
+  labelReview.textContent = currentVisited ? 'Your review' : 'Why you want to go';
+  fReview.placeholder = currentVisited
+    ? 'What did you order? What was the vibe? Would you go back?'
+    : 'What made you want to add this one — a recommendation, something you saw online?';
+}
+Array.from(statusToggleEl.children).forEach(opt => {
+  opt.addEventListener('click', () => {
+    currentVisited = opt.dataset.status === 'visited';
+    updateVisitedUI();
+  });
+});
+updateVisitedUI();
 
 function todayISO(){
   const d = new Date();
@@ -1220,6 +1322,8 @@ function openModal(mode, shop){
   currentRating = shop ? (shop.rating || 5) : 5;
   updateStarPicker();
   fReview.value = shop ? (shop.review || '') : '';
+  currentVisited = shop ? (shop.visited !== false) : true;
+  updateVisitedUI();
 
   existingPhotos = shop && shop.photos ? shop.photos.map(p => ({ ...p })) : [];
   removedPhotos = [];
@@ -1257,9 +1361,10 @@ shopForm.addEventListener('submit', async (e) => {
     const draft = {
       name,
       neighborhood: fNeighborhood.value.trim(),
-      dateVisited: fDate.value,
-      rating: currentRating,
-      review: fReview.value.trim()
+      dateVisited: currentVisited ? fDate.value : '',
+      rating: currentVisited ? currentRating : 0,
+      review: fReview.value.trim(),
+      visited: currentVisited
     };
 
     let shopId = editingId;
