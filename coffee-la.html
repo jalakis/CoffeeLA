@@ -227,7 +227,7 @@
     -webkit-box-orient:vertical;
     overflow:hidden;
   }
-  .neighborhood-tag{
+  .city-tag{
     font-size:10.5px;
     font-weight:600;
     padding:2px 7px;
@@ -685,8 +685,8 @@
         <input type="text" id="fName" required placeholder="e.g. Canyon Coffee" />
       </div>
       <div class="field">
-        <label for="fNeighborhood">Neighborhood / area</label>
-        <input type="text" id="fNeighborhood" placeholder="e.g. Echo Park" />
+        <label for="fCity">City</label>
+        <input type="text" id="fCity" placeholder="e.g. Los Angeles" />
       </div>
       <div class="field" id="fieldDate">
         <label for="fDate">Date visited</label>
@@ -730,7 +730,7 @@ const PHOTOS_BUCKET = "shop-photos";
 function toDbRow(shop){
   return {
     name: shop.name,
-    neighborhood: shop.neighborhood || null,
+    city: shop.city || null,
     lat: shop.lat,
     lng: shop.lng,
     rating: shop.rating || null,
@@ -750,7 +750,7 @@ function fromDbRow(row){
   return {
     id: row.id,
     name: row.name,
-    neighborhood: row.neighborhood || '',
+    city: row.city || '',
     lat: row.lat,
     lng: row.lng,
     rating: row.rating || 0,
@@ -833,8 +833,8 @@ let shops = [];
 const mapEl = document.getElementById('map');
 const map = L.map('map', { zoomControl: true }).setView([34.05, -118.3], 10);
 
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
   maxZoom: 19
 }).addTo(map);
 
@@ -862,7 +862,7 @@ function makeIcon(temp, visited){
 }
 
 function mapsLink(shop){
-  const q = shop.name + (shop.neighborhood ? (", " + shop.neighborhood) : "") + ", Los Angeles, CA";
+  const q = shop.name + (shop.city ? (", " + shop.city) : "");
   return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
 }
 
@@ -923,7 +923,7 @@ function popupHTML(shop){
       <h3 class="popup-name">${escapeHTML(shop.name)}</h3>
       <div class="popup-meta">
         ${shop.visited === false ? `<span class="want-tag">☕ Want to visit</span>` : `<span class="stars">${starString(shop.rating)}</span>`}
-        ${shop.neighborhood ? `<span class="neighborhood-tag">${escapeHTML(shop.neighborhood)}</span>` : ''}
+        ${shop.city ? `<span class="city-tag">${escapeHTML(shop.city)}</span>` : ''}
         ${shop.visited !== false && shop.dateVisited ? `<span class="visit-date">Visited ${formatDate(shop.dateVisited)}</span>` : ''}
       </div>
       ${shop.review ? `<p class="popup-blurb">${escapeHTML(shop.review)}</p>` : ''}
@@ -976,7 +976,7 @@ function renderStatusFilters(){
 }
 
 function renderFilters(){
-  const tags = Array.from(new Set(shops.map(s => (s.neighborhood || '').trim()).filter(Boolean))).sort();
+  const tags = Array.from(new Set(shops.map(s => (s.city || '').trim()).filter(Boolean))).sort();
   filtersEl.innerHTML = '';
   if(tags.length < 2){
     filtersEl.classList.add('hidden');
@@ -1006,9 +1006,9 @@ const countEl = document.getElementById('listCount');
 let selectedId = null;
 
 function matches(shop){
-  const passesFilter = activeFilter === "All" || (shop.neighborhood || '') === activeFilter;
+  const passesFilter = activeFilter === "All" || (shop.city || '') === activeFilter;
   const passesStatus = statusFilter === "All" || (statusFilter === 'want' ? shop.visited === false : shop.visited !== false);
-  const hay = [shop.name, shop.neighborhood, shop.review].filter(Boolean).join(' ').toLowerCase();
+  const hay = [shop.name, shop.city, shop.review].filter(Boolean).join(' ').toLowerCase();
   const passesSearch = !searchTerm || hay.includes(searchTerm);
   return passesFilter && passesStatus && passesSearch;
 }
@@ -1072,7 +1072,7 @@ function render(){
         <p class="shop-card-name">${escapeHTML(shop.name)}</p>
         <div class="shop-card-meta">
           ${shop.visited === false ? `<span class="want-tag">☕ Want to visit</span>` : `<span class="stars">${starString(shop.rating)}</span>`}
-          ${shop.neighborhood ? `<span class="neighborhood-tag">${escapeHTML(shop.neighborhood)}</span>` : ''}
+          ${shop.city ? `<span class="city-tag">${escapeHTML(shop.city)}</span>` : ''}
           ${shop.visited !== false && shop.dateVisited ? `<span class="visit-date">${formatDate(shop.dateVisited)}</span>` : ''}
         </div>
         ${shop.review ? `<p class="shop-card-blurb">${escapeHTML(shop.review)}</p>` : ''}
@@ -1131,7 +1131,7 @@ const modalTitle = document.getElementById('modalTitle');
 const modalSub = document.getElementById('modalSub');
 const shopForm = document.getElementById('shopForm');
 const fName = document.getElementById('fName');
-const fNeighborhood = document.getElementById('fNeighborhood');
+const fCity = document.getElementById('fCity');
 const fDate = document.getElementById('fDate');
 const fReview = document.getElementById('fReview');
 const labelReview = document.getElementById('labelReview');
@@ -1317,7 +1317,7 @@ function openModal(mode, shop){
     : 'Drop a pin, then tell us about it. Drag the orange pin on the map to fine-tune the spot.';
 
   fName.value = shop ? shop.name : '';
-  fNeighborhood.value = shop ? (shop.neighborhood || '') : '';
+  fCity.value = shop ? (shop.city || '') : '';
   fDate.value = shop ? (shop.dateVisited || todayISO()) : todayISO();
   currentRating = shop ? (shop.rating || 5) : 5;
   updateStarPicker();
@@ -1360,7 +1360,7 @@ shopForm.addEventListener('submit', async (e) => {
   try{
     const draft = {
       name,
-      neighborhood: fNeighborhood.value.trim(),
+      city: fCity.value.trim(),
       dateVisited: currentVisited ? fDate.value : '',
       rating: currentVisited ? currentRating : 0,
       review: fReview.value.trim(),
